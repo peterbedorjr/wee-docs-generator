@@ -1,16 +1,36 @@
+#!/usr/bin/env node
+
+require('dotenv').config();
+
+const argv = require('yargs').argv
+const path = require('path');
 const fs = require('fs-extra');
 const glob = require('glob');
 const marked = require('marked');
+const algoliasearch = require('algoliasearch');
 const slugify = require('./slugify');
 
-const version = process.argv.length === 3 ? process.argv[2] : 'v4';
+const algoliaAppId = process.env.ALGOLIA_APP_ID;
+const algoliaSecret = process.env.ALGOLIA_SECRET;
 
-console.log(version);
+const client = algoliasearch(algoliaAppId, algoliaSecret);
+const indexes = {
+    v3: client.initIndex('v3'),
+    v4: client.initIndex('v4'),
+};
+const basePath = path.resolve(process.cwd());
+const version = argv.v === 4 ? 'v4' : 'v3';
+const files = glob.sync(path.resolve(basePath, version, '**/*.md'));
 
-const files = glob.sync(`./docs/${version}/**/*.md`);
 
+/**
+ * Get the slug from the file name
+ *
+ * @param {String} path
+ * @param {String} id
+ */
 const getSlugFromFile = (path, id = '') => {
-    let url = path.replace('./docs', '').replace('.md', '').replace('README', '');
+    let url = path.replace(basePath, '').replace('.md', '').replace('README', '');
 
     if (id) {
         url += `?id=${id}`;
@@ -36,7 +56,7 @@ for (let i = 0; i < files.length; i += 1) {
                 return;
             }
 
-            if ( !index[slug]) {
+            if (! index[slug]) {
                 index[slug] = {slug, title: '', body: ''};
             } else if (index[slug].body) {
                 index[slug].body += '\n' + (token.text || '');
@@ -47,5 +67,9 @@ for (let i = 0; i < files.length; i += 1) {
     });
 }
 
-fs.writeJsonSync(`./indexes/${version}.json`, Object.values(index), 'utf-8');
+fs.writeJsonSync(path.resolve(basePath, 'indexes', `${version}.json`), Object.values(index));
+
+indexes[version].clearIndex(() => {
+    indexes[version].addObjects(Object.values(index));
+});
 
